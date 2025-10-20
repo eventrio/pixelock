@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 
 export const runtime = "nodejs";
 
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest, _context: any) {
   const data = await req.formData();
   const file = data.get("file") as File | null;
   if (!file) return NextResponse.json({ error: "Missing file" }, { status: 400 });
@@ -25,10 +25,10 @@ export async function POST(req: NextRequest) {
 
   const maxViews = Number(process.env.MAX_VIEWS || 1);
   const ttlHours = Number(process.env.UPLOAD_TTL_HOURS || 0);
-  const expiresAtISO = ttlHours > 0 ? new Date(Date.now() + ttlHours * 3600_000).toISOString() : null;
+  const expires_at = ttlHours > 0 ? new Date(Date.now() + ttlHours * 3600_000).toISOString() : null;
 
   const ins1 = await supabaseServer.from("images").insert({
-    id: imageId, token, storage_key: storageKey, max_views: maxViews, ...(expiresAtISO ? { expires_at: expiresAtISO } : {}),
+    id: imageId, token, storage_key: storageKey, max_views: maxViews, ...(expires_at ? { expires_at } : {}),
   });
   if (ins1.error) return NextResponse.json({ error: ins1.error.message }, { status: 500 });
 

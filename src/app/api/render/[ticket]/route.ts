@@ -3,14 +3,10 @@ import { supabaseServer } from "@/lib/supabaseServer";
 
 export const runtime = "nodejs";
 
-// Next.js 15: accept a generic context object to avoid signature/type errors.
 export async function GET(_req: NextRequest, context: any) {
   const ticketId = context?.params?.ticket as string | undefined;
-  if (!ticketId) {
-    return NextResponse.json({ error: "No ticket" }, { status: 400 });
-  }
+  if (!ticketId) return NextResponse.json({ error: "No ticket" }, { status: 400 });
 
-  // Consume the ticket if it's valid (not used, not expired)
   const consume = await supabaseServer
     .from("tickets")
     .update({ consumed: true })
@@ -24,35 +20,24 @@ export async function GET(_req: NextRequest, context: any) {
     return NextResponse.json({ error: "Ticket expired/invalid" }, { status: 410 });
   }
 
-  // Verify the view session is still valid
   const sessQ = await supabaseServer
     .from("view_sessions")
     .select("image_id, expires_at")
     .eq("id", consume.data.session_id)
     .maybeSingle();
 
-  if (
-    sessQ.error ||
-    !sessQ.data ||
-    new Date(sessQ.data.expires_at) <= new Date()
-  ) {
+  if (sessQ.error || !sessQ.data || new Date(sessQ.data.expires_at) <= new Date()) {
     return NextResponse.json({ error: "Session expired" }, { status: 410 });
   }
 
   const storageKey = sessQ.data.image_id;
-
-  // Download the file from Supabase Storage
   const dl = await supabaseServer.storage.from("pixelock").download(storageKey);
   if (dl.error || !dl.data) {
-    return NextResponse.json(
-      { error: dl.error?.message || "Not found" },
-      { status: 404 }
-    );
+    return NextResponse.json({ error: dl.error?.message || "Not found" }, { status: 404 });
   }
 
   const buf = Buffer.from(await dl.data.arrayBuffer());
 
-  // Best-effort content type from filename
   let contentType = "application/octet-stream";
   const lower = storageKey.toLowerCase();
   if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) contentType = "image/jpeg";
@@ -67,7 +52,9 @@ export async function GET(_req: NextRequest, context: any) {
     headers: {
       "Content-Type": contentType,
       "Cache-Control": "no-store, max-age=0",
-      "Content-Disposition": `inline; filename="${encodeURIComponent(storageKey.split("/").pop() || "pixelock.bin")}"`,
+      "Content-Disposition": `inline; filename="${encodeURIComponent(
+        storageKey.split("/").pop() || "pixelock.bin"
+      )}"`,
     },
   });
 }
