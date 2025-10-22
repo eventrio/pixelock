@@ -1,33 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
 
-export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest, _context: any) {
-  const { session_id } = await req.json().catch(() => ({} as any));
-  if (!session_id) {
-    return NextResponse.json({ error: "Missing session_id" }, { status: 400 });
-  }
-
-  // Look up the session to validate and get the image_id
-  const sessQ = await supabaseServer
-    .from("view_sessions")
-    .select("image_id")
-    .eq("id", session_id)
-    .maybeSingle();
-
-  if (sessQ.error || !sessQ.data) {
-    return NextResponse.json({ error: "No session" }, { status: 404 });
-  }
-
-  // Optional: increment the image's view counter via RPC (ignore failures)
+export async function POST(req: NextRequest) {
   try {
-    await supabaseServer.rpc("increment_image_views", {
-      p_image_id: sessQ.data.image_id,
-    });
-  } catch {
-    // ignore (analytics only)
-  }
+    const body = await req.json().catch(() => ({}));
+    const session_id: unknown = body?.session_id;
 
-  return NextResponse.json({ ok: true });
+    if (typeof session_id !== "string" || !session_id.trim()) {
+      return NextResponse.json(
+        { error: "session_id required" },
+        { status: 400 }
+      );
+    }
+
+    const supabase = supabaseServer(); // ✅ invoke factory
+
+    const { data, error } = await supabase
+      .from("view_sessions")
+      .select("image_id")
+      .eq("id", session_id)
+      .maybeSingle();
+
+    if (error) {
+      return NextResponse.json(
+        { error: `DB error: ${error.message}` },
+        { status: 500 }
+      );
+    }
+
+    if (!data?.image_id) {
+      return NextResponse.json(
+        { error: "Invalid or expired session" },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ image_id: data.image_id }, { status: 200 });
+  } catch (e: any) {
+    return NextResponse.json(
+        { error: e?.message ?? "Server error" },
+        { status: 500 }
+    );
+  }
 }
