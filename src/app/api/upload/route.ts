@@ -1,64 +1,133 @@
-// app/api/upload/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
 import { supabaseServer } from "@/lib/supabaseServer";
-import { hashPin } from "@/lib/crypto"; // add this if missing (see below)
 
-export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function json(data: any, status = 200) {
-  return new NextResponse(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" }});
+// Utility: consistent JSON responses
+function json(payload: unknown, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
 }
 
-export async function POST(req: NextRequest) {
+// Read PIN from multiple sources so client differences don't break uploads
+async function extractPin(req: Request): Promise<string | undefined> {
+  // 1) Authorization: Bearer <pin>
+  const auth = req.headers.get("authorization") || req.headers.get("Authorization");
+  if (auth?.toLowerCase().startsWith("bearer ")) {
+    const p = auth.slice(7).trim();
+    if (p) return p;
+  }
+
+  // 2) Cookie: pin=<pin>
+  const cookie = req.headers.get("cookie") || "";
+  const m = cookie.match(/(?:^|;\s*)pin=([^;]+)/i);
+  if (m?.[1]) return decodeURIComponent(m[1]);
+
+  const ctype = req.headers.get("content-type") || "";
+
+  // 3) multipart/form-data — common for file uploads
+  if (ctype.includes("multipart/form-data")) {
+    try {
+      const form = await req.formData();
+      const pin = form.get("pin");
+      if (typeof pin === "string" && pin.trim()) return pin.trim();
+      // Keep file reference for later if present
+      return undefined;
+    } catch {
+      // fall through to JSON
+    }
+  }
+
+  // 4) application/json
+  if (ctype.includes("application/json")) {
+    try {
+      const body = await req.json();
+      const pin = body?.pin;
+      if (typeof pin === "string" && pin.trim()) return pin.trim();
+    } catch {
+      // ignore
+    }
+  }
+
+  return undefined;
+}
+
+export async function POST(req: Request) {
   try {
-    // Parse body: expect JSON with { pin, maxViews?, ... } OR FormData; adapt to your UI
-    const body = await req.json().catch(() => ({} as any));
-    const pin = String(body.pin ?? "").trim();
+    // Normalize pin sources
+    const pin = await extractPin(req);
     if (!pin) return json({ error: "Missing pin" }, 400);
 
-    // Create IDs/timestamps
-    const id = randomUUID();
-    const token = randomUUID().replace(/-/g, "").slice(0, 16); // short token for URL
-    const now = Date.now();
+    // Enforce length if configured
+    const PIN_DIGITS = Number(process.env.PIN_DIGITS || 0);
+    if (PIN_DIGITS > 0 && pin.length !== PIN_DIGITS) {
+      return json({ error: `Invalid pin length; expected ${PIN_DIGITS} digits` }, 400);
+    }
 
-    const hours = Number(process.env.UPLOAD_TTL_HOURS ?? 24);
-    const expiresIso = new Date(now + Math.max(1, hours) * 3600_000).toISOString();
-    const maxViews = Number(process.env.MAX_VIEWS ?? 1);
+    // Parse form (we expect the file as multipart 'file')
+    const contentType = req.headers.get("content-type") || "";
+    if (!contentType.includes("multipart/form-data")) {
+      return json({ error: "Expected multipart/form-data" }, 400);
+    }
 
-    // 1) (If you upload the binary to Supabase Storage, do that here)
-    // const filePath = `images/${id}.png`; // example
-    // await supabase.storage.from('images').upload(filePath, fileBlob, { upsert: false });
+    const form = await req.formData();
+    const file = form.get("file");
+    if (!(file instanceof File)) {
+      return json({ error: "Missing file" }, 400);
+    }
 
-    // 2) DB inserts
+    // Optional: metadata (accept either form fields or JSON-ish text)
+    const metaRaw = form.get("meta");
+    let meta: Record<string, unknown> | undefined = undefined;
+    if (typeof metaRaw === "string") {
+      try { meta = JSON.parse(metaRaw); } catch { /* ignore */ }
+    }
+
+    // Upload to Supabase Storage (adjust bucket/path to your schema)
     const supabase = supabaseServer();
 
-    // images row
-    const { error: imgErr } = await supabase.from("images").insert({
-      id,
-      token,
-      path: body.path ?? null, // or filePath from storage step above
-      views: 0,
-      max_views: maxViews,
-      expires_at: expiresIso,
-    });
-    if (imgErr) return json({ error: imgErr.message }, 500);
+    const bucket = "uploads"; // <- change if your bucket is named differently
+    const fileExt = (() => {
+      const name = file.name || "upload.bin";
+      const dot = name.lastIndexOf(".");
+      return dot >= 0 ? name.slice(dot) : "";
+    })();
 
-    // image_shares row with hashed PIN
-    const pin_hash = await hashPin(pin);
-    const { error: shareErr } = await supabase.from("image_shares").insert({
-      image_id: id,
-      pin_hash,
-    });
-    if (shareErr) return json({ error: shareErr.message }, 500);
+    const now = new Date();
+    const key = `pins/${pin}/${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}/${crypto.randomUUID()}${fileExt}`;
 
-    // 3) Respond with share URL for /img/[token]
-    const base = process.env.NEXT_PUBLIC_APP_URL ?? process.env.URL ?? "";
-    const shareUrl = `${base.replace(/\/$/, "")}/img/${token}`;
+    const arrayBuf = await file.arrayBuffer();
 
-    return json({ ok: true, id, token, expires_at: expiresIso, max_views: maxViews, url: shareUrl });
+    const { error: upErr } = await supabase.storage
+      .from(bucket)
+      .upload(key, new Uint8Array(arrayBuf), {
+        contentType: file.type || "application/octet-stream",
+        upsert: false,
+      });
+
+    if (upErr) {
+      return json({ error: `Upload failed: ${upErr.message}` }, 500);
+    }
+
+    // Optionally insert a DB row tying pin -> object path (adjust table/columns)
+    // const { error: dbErr } = await supabase.from("uploads").insert({
+    //   pin,
+    //   path: key,
+    //   content_type: file.type || null,
+    //   meta,
+    // });
+    // if (dbErr) return json({ error: `DB error: ${dbErr.message}` }, 500);
+
+    return json({
+      ok: true,
+      pin,
+      bucket,
+      path: key,
+      contentType: file.type || "application/octet-stream",
+      meta: meta ?? null,
+    }, 200);
   } catch (e: any) {
-    return json({ error: e?.message ?? "Upload failed" }, 500);
+    return json({ error: e?.message ?? "Server error" }, 500);
   }
 }
