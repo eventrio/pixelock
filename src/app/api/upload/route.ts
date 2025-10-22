@@ -3,8 +3,7 @@ import "server-only";
 import { supabaseServer } from "@/lib/supabaseServer";
 
 export const dynamic = "force-dynamic";
-// ✅ Force Node runtime so we have Node's Buffer & stable outbound fetch
-export const runtime = "nodejs";
+export const runtime = "nodejs"; // ensure Node runtime on Netlify
 
 function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -13,7 +12,7 @@ function json(payload: unknown, status = 200) {
   });
 }
 
-// --- Safe diagnostics (uses req.clone() so we don't consume the stream) -----
+// Safe diagnostics without consuming body
 async function debugDump(req: Request) {
   const clone = req.clone();
   const url = new URL(clone.url);
@@ -40,9 +39,7 @@ async function debugDump(req: Request) {
   if (contentType.includes("multipart/form-data")) {
     try {
       const form = await clone.formData();
-      for (const [k] of form.entries()) {
-        if (!formKeys.includes(k)) formKeys.push(k);
-      }
+      for (const [k] of form.entries()) if (!formKeys.includes(k)) formKeys.push(k);
     } catch {}
   } else if (contentType.includes("application/json")) {
     try {
@@ -54,11 +51,11 @@ async function debugDump(req: Request) {
   return { headers: hdr, cookies_present: cookieKeys, query_keys: queryKeys, form_keys: formKeys, json_keys: jsonKeys };
 }
 
-// --- Tolerant PIN extraction (uses a clone to avoid consuming the stream) ---
+// tolerant PIN extractor
 async function extractPin(req: Request): Promise<string | undefined> {
   const r = req.clone();
 
-  // 0) URL query
+  // query
   try {
     const u = new URL(r.url);
     for (const k of u.searchParams.keys()) {
@@ -70,7 +67,7 @@ async function extractPin(req: Request): Promise<string | undefined> {
     }
   } catch {}
 
-  // 1) Headers
+  // headers
   const auth = r.headers.get("authorization") || r.headers.get("Authorization");
   if (auth?.toLowerCase().startsWith("bearer ")) {
     const v = auth.slice(7).trim();
@@ -79,12 +76,12 @@ async function extractPin(req: Request): Promise<string | undefined> {
   const xpin = r.headers.get("x-pin") || r.headers.get("X-Pin");
   if (xpin?.trim()) return xpin.trim();
 
-  // 2) Cookies
+  // cookie
   const cookie = r.headers.get("cookie") || "";
   const m = cookie.match(/(?:^|;\s*)(pin|PIN|code|passcode|p)=([^;]+)/);
   if (m?.[2]) return decodeURIComponent(m[2].trim());
 
-  // 3) Body
+  // body
   const ctype = (r.headers.get("content-type") || "").toLowerCase();
   if (ctype.includes("multipart/form-data")) {
     try {
@@ -92,13 +89,10 @@ async function extractPin(req: Request): Promise<string | undefined> {
       const direct =
         form.get("pin") || form.get("PIN") || form.get("code") || form.get("passcode") || form.get("p");
       if (typeof direct === "string" && direct.trim()) return direct.trim();
-
       for (const [name, value] of form.entries()) {
         const key = name.toLowerCase();
-        if (key === "pin" || key === "code" || key === "passcode" || key === "p") {
-          if (typeof value === "string" && value.trim()) {
-            return value.trim();
-          }
+        if ((key === "pin" || key === "code" || key === "passcode" || key === "p") && typeof value === "string" && value.trim()) {
+          return value.trim();
         }
       }
     } catch {}
@@ -124,41 +118,74 @@ async function extractPin(req: Request): Promise<string | undefined> {
   return undefined;
 }
 
-// ---- HTTP handler ----------------------------------------------------------
+// connectivity preflight to Supabase Storage
+async function preflightStorage(): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const base = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim().replace(/\/+$/, "");
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+
+  if (!base) return { ok: false, reason: "Missing NEXT_PUBLIC_SUPABASE_URL" };
+  if (!key) return { ok: false, reason: "Missing SUPABASE_SERVICE_ROLE_KEY" };
+
+  const url = `${base}/storage/v1/bucket`;
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        apikey: key,
+        authorization: `Bearer ${key}`,
+      },
+      signal: controller.signal,
+    }).catch((e) => {
+      throw new Error(`Network error to ${new URL(base).host}: ${e?.message || e}`);
+    });
+    clearTimeout(t);
+
+    if (!res.ok) {
+      return { ok: false, reason: `Supabase HTTP ${res.status} at ${new URL(base).host}/storage/v1/bucket` };
+    }
+    return { ok: true };
+  } catch (e: any) {
+    clearTimeout(t);
+    return { ok: false, reason: e?.message || "Unknown network error" };
+  }
+}
+
 export async function POST(req: Request) {
   try {
-    // Read configured PIN length once (defaults to 4 if unset)
+    // PIN rules
     const configured = Number(process.env.PIN_DIGITS || 4);
     const PIN_LEN =
       Number.isFinite(configured) && configured > 0
         ? Math.min(12, Math.max(3, configured))
         : 4;
 
-    // Use let so we can generate one if the client didn't send it
     let pin = await extractPin(req);
-
-    // If no pin provided by client, generate one server-side
     if (!pin) {
-      pin = Array.from({ length: PIN_LEN }, () =>
-        Math.floor(Math.random() * 10)
-      ).join("");
+      pin = Array.from({ length: PIN_LEN }, () => Math.floor(Math.random() * 10)).join("");
     }
-
-    // Enforce length (covers both client-supplied and generated pins)
     if (pin.length !== PIN_LEN) {
       return json({ error: `Invalid pin length; expected ${PIN_LEN} digits` }, 400);
     }
 
-    // Validate envs early (helps avoid "fetch failed")
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-      return json({ error: "Server misconfig: NEXT_PUBLIC_SUPABASE_URL is missing" }, 500);
-    }
-
+    // Content-type
     const contentType = (req.headers.get("content-type") || "").toLowerCase();
     if (!contentType.includes("multipart/form-data")) {
       return json({ error: "Expected multipart/form-data" }, 400);
     }
 
+    // Preflight Supabase connectivity (clearer error than "fetch failed")
+    const pre = await preflightStorage();
+    if (!pre.ok) {
+      return json({
+        error: `Supabase connectivity check failed: ${pre.reason}`,
+        hint: "If you're on Netlify, set NODE_OPTIONS=--dns-result-order=ipv4first and ensure NEXT_PUBLIC_SUPABASE_URL is the full https://...supabase.co URL.",
+      }, 500);
+    }
+
+    // Parse form
     const form = await req.formData();
     const fileCandidate = form.get("file") ?? form.get("image") ?? form.get("photo") ?? form.get("upload");
     if (!(fileCandidate instanceof File)) {
@@ -166,21 +193,20 @@ export async function POST(req: Request) {
     }
     const file = fileCandidate as File;
 
-    // Optional JSON metadata (string in "meta" field)
+    // Optional metadata
     const metaRaw = form.get("meta");
     let meta: Record<string, unknown> | undefined;
     if (typeof metaRaw === "string") {
       try { meta = JSON.parse(metaRaw); } catch {}
     }
 
-    // Init Supabase server client
+    // Supabase client (service role)
     const supabase = supabaseServer();
 
-    const bucket = "uploads"; // change if needed
-
-    const fileName = file.name || "upload.bin";
-    const dot = fileName.lastIndexOf(".");
-    const ext = dot >= 0 ? fileName.slice(dot) : "";
+    const bucket = "uploads"; // adjust if your bucket differs
+    const name = file.name || "upload.bin";
+    const dot = name.lastIndexOf(".");
+    const ext = dot >= 0 ? name.slice(dot) : "";
 
     const now = new Date();
     const key =
@@ -191,10 +217,7 @@ export async function POST(req: Request) {
       `${crypto.randomUUID()}${ext}`;
 
     const arrayBuf = await file.arrayBuffer();
-
-    // ✅ Use Node Buffer when available; fallback to Uint8Array for edge (shouldn't hit since runtime=nodejs)
-    const payload: any =
-      typeof Buffer !== "undefined" ? Buffer.from(arrayBuf) : new Uint8Array(arrayBuf);
+    const payload: any = typeof Buffer !== "undefined" ? Buffer.from(arrayBuf) : new Uint8Array(arrayBuf);
 
     const { error: upErr } = await supabase.storage
       .from(bucket)
@@ -204,19 +227,27 @@ export async function POST(req: Request) {
       });
 
     if (upErr) {
-      const message = upErr.message || "unknown";
-      return json({ error: `Upload failed: ${message}` }, 500);
+      return json({ error: `Upload failed: ${upErr.message}` }, 500);
     }
 
     return json({
       ok: true,
+      token: key, // if you later map token differently, adjust here
       pin,
+      shareText: `An image has been shared with you!\nFollow the link: /img/${key}\nPin: ${pin}`,
       bucket,
       path: key,
       contentType: file.type || "application/octet-stream",
       meta: meta ?? null,
     });
   } catch (e: any) {
+    // Enhanced error in debug
+    if ((process.env.DEBUG_UPLOAD || "").toString() === "1") {
+      try {
+        const dbg = await debugDump(req);
+        return json({ error: e?.message ?? "Server error", debug: dbg }, 500);
+      } catch {}
+    }
     return json({ error: e?.message ?? "Server error" }, 500);
   }
 }
