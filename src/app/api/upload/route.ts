@@ -1,42 +1,64 @@
+// app/api/upload/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseServer } from "@/lib/supabaseServer";
-import { genPin, hashPin } from "@/lib/crypto";
 import { randomUUID } from "crypto";
+import { supabaseServer } from "@/lib/supabaseServer";
+import { hashPin } from "@/lib/crypto"; // add this if missing (see below)
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest, _context: any) {
-  const data = await req.formData();
-  const file = data.get("file") as File | null;
-  if (!file) return NextResponse.json({ error: "Missing file" }, { status: 400 });
+function json(data: any, status = 200) {
+  return new NextResponse(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" }});
+}
 
-  const imageId = randomUUID();
-  const token = imageId.slice(0, 8) + Math.random().toString(36).slice(2, 10);
-  const storageKey = `${imageId}`;
+export async function POST(req: NextRequest) {
+  try {
+    // Parse body: expect JSON with { pin, maxViews?, ... } OR FormData; adapt to your UI
+    const body = await req.json().catch(() => ({} as any));
+    const pin = String(body.pin ?? "").trim();
+    if (!pin) return json({ error: "Missing pin" }, 400);
 
-  const buf = Buffer.from(await file.arrayBuffer());
-  const up = await supabaseServer.storage.from("pixelock").upload(storageKey, buf, {
-    upsert: false, contentType: file.type || "application/octet-stream",
-  });
-  if (up.error) return NextResponse.json({ error: up.error.message }, { status: 500 });
+    // Create IDs/timestamps
+    const id = randomUUID();
+    const token = randomUUID().replace(/-/g, "").slice(0, 16); // short token for URL
+    const now = Date.now();
 
-  const pin = genPin();
-  const pin_hash = await hashPin(pin);
+    const hours = Number(process.env.UPLOAD_TTL_HOURS ?? 24);
+    const expiresIso = new Date(now + Math.max(1, hours) * 3600_000).toISOString();
+    const maxViews = Number(process.env.MAX_VIEWS ?? 1);
 
-  const maxViews = Number(process.env.MAX_VIEWS || 1);
-  const ttlHours = Number(process.env.UPLOAD_TTL_HOURS || 0);
-  const expires_at = ttlHours > 0 ? new Date(Date.now() + ttlHours * 3600_000).toISOString() : null;
+    // 1) (If you upload the binary to Supabase Storage, do that here)
+    // const filePath = `images/${id}.png`; // example
+    // await supabase.storage.from('images').upload(filePath, fileBlob, { upsert: false });
 
-  const ins1 = await supabaseServer.from("images").insert({
-    id: imageId, token, storage_key: storageKey, max_views: maxViews, ...(expires_at ? { expires_at } : {}),
-  });
-  if (ins1.error) return NextResponse.json({ error: ins1.error.message }, { status: 500 });
+    // 2) DB inserts
+    const supabase = supabaseServer();
 
-  const ins2 = await supabaseServer.from("image_shares").insert({ image_id: imageId, pin_hash });
-  if (ins2.error) return NextResponse.json({ error: ins2.error.message }, { status: 500 });
+    // images row
+    const { error: imgErr } = await supabase.from("images").insert({
+      id,
+      token,
+      path: body.path ?? null, // or filePath from storage step above
+      views: 0,
+      max_views: maxViews,
+      expires_at: expiresIso,
+    });
+    if (imgErr) return json({ error: imgErr.message }, 500);
 
-  const shareText = `An image has been shared with you!
-Follow the link: ${process.env.NEXT_PUBLIC_APP_URL}/img/${token}
-Pin: ${pin}`;
-  return NextResponse.json({ token, pin, shareText });
+    // image_shares row with hashed PIN
+    const pin_hash = await hashPin(pin);
+    const { error: shareErr } = await supabase.from("image_shares").insert({
+      image_id: id,
+      pin_hash,
+    });
+    if (shareErr) return json({ error: shareErr.message }, 500);
+
+    // 3) Respond with share URL for /img/[token]
+    const base = process.env.NEXT_PUBLIC_APP_URL ?? process.env.URL ?? "";
+    const shareUrl = `${base.replace(/\/$/, "")}/img/${token}`;
+
+    return json({ ok: true, id, token, expires_at: expiresIso, max_views: maxViews, url: shareUrl });
+  } catch (e: any) {
+    return json({ error: e?.message ?? "Upload failed" }, 500);
+  }
 }
