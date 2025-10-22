@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { useEffect, useMemo, useState } from 'react';
 import ImageSourcePicker from '@/components/ImageSourcePicker';
@@ -9,6 +9,13 @@ export default function Home() {
   const [resp, setResp] = useState<UploadResp | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // ✅ Define the handler used by ImageSourcePicker
+  function handleUploaded(data: UploadResp) {
+    setResp(data);
+    setShowModal(true);
+    setCopied(false);
+  }
 
   // Open modal automatically when an upload completes
   useEffect(() => {
@@ -96,9 +103,8 @@ Pin: ${resp.pin}`;
           Share images privately with a timed reveal.
         </p>
 
-        {/* Uploader */}
-        <ImageSourcePicker onUploaded={handleUploaded} pin={pin} />
-
+        {/* ✅ Uploader (no pin prop) */}
+        <ImageSourcePicker onUploaded={handleUploaded} />
 
         {/* Inline Share box (kept) */}
         {resp && (

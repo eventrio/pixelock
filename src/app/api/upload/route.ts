@@ -122,25 +122,34 @@ async function extractPin(req: Request): Promise<string | undefined> {
 // ---- HTTP handler ----------------------------------------------------------
 export async function POST(req: Request) {
   try {
-    const pin = await extractPin(req);
+    // Read configured PIN length once (defaults to 4 if unset)
+    const configured = Number(process.env.PIN_DIGITS || 4);
+    const PIN_LEN =
+      Number.isFinite(configured) && configured > 0
+        ? Math.min(12, Math.max(3, configured))
+        : 4;
 
-    if (!pin) {
-      if ((process.env.DEBUG_UPLOAD || "").toString() === "1") {
-        const dbg = await debugDump(req);
-        return json({ error: "Missing pin", debug: dbg }, 400);
-      }
-      return json({ error: "Missing pin" }, 400);
+    // Use let so we can generate one if the client didn't send it
+    let pin = await extractPin(req);
+
+    // If no pin provided by client, generate one server-side
+    let (!pin) {
+      pin = Array.from({ length: PIN_LEN }, () =>
+        Math.floor(Math.random() * 10)
+      ).join("");
     }
 
-    const PIN_DIGITS = Number(process.env.PIN_DIGITS || 0);
-    if (PIN_DIGITS > 0 && pin.length !== PIN_DIGITS) {
-      return json({ error: `Invalid pin length; expected ${PIN_DIGITS} digits` }, 400);
+    // Enforce length (covers both client-supplied and generated pins)
+        if (pin.length !== PIN_LEN) {
+      return json({ error: `Invalid pin length; expected ${PIN_LEN} digits` }, 400);
     }
 
-    const contentType = (req.headers.get("content-type") || "").toLowerCase();
+
+        const contentType = (req.headers.get("content-type") || "").toLowerCase();
     if (!contentType.includes("multipart/form-data")) {
       return json({ error: "Expected multipart/form-data" }, 400);
     }
+
 
     const form = await req.formData();
     const fileCandidate = form.get("file") ?? form.get("image") ?? form.get("photo") ?? form.get("upload");
