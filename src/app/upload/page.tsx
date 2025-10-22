@@ -36,11 +36,10 @@ export default function UploadPage() {
         throw new Error(msg);
       }
 
-      // Success
       setStatus(`✅ Uploaded: ${json?.path ?? "OK"}`);
-      setPin("");          // clear PIN from memory
-      setFile(null);       // clear selected file
-      if (fileInputRef.current) fileInputRef.current.value = ""; // reset input element
+      setPin("");
+      setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (e: any) {
       setStatus(`❌ ${e?.message || "Upload failed"}`);
     } finally {

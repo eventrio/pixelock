@@ -117,7 +117,7 @@ export async function POST(req: Request) {
 
     if (upErr) return json({ error: `Upload failed: ${upErr.message}` }, 500);
 
-    // Optionally record in a table
+    // Optional: record to a table
     // const { error: dbErr } = await supabase.from("uploads").insert({
     //   pin,
     //   path: key,

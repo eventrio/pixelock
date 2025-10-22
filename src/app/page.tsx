@@ -5,6 +5,9 @@ import ImageSourcePicker from '@/components/ImageSourcePicker';
 
 type UploadResp = { token: string; pin: string; shareText: string };
 
+export { default } from "./upload/page";
+
+
 export default function Home() {
   const [resp, setResp] = useState<UploadResp | null>(null);
   const [showModal, setShowModal] = useState(false);
