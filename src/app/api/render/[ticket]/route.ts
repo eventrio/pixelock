@@ -15,14 +15,15 @@ function json(data: any, status = 200) {
   });
 }
 
-// ✅ Note the function signature: destructure `{ params }` in the 2nd arg
-export async function GET(
-  _req: Request,
-  { params }: { params: { ticket: string } }
-) {
+export async function GET(req: Request) {
   try {
     const supabase = supabaseServer();
-    const ticketId = params.ticket?.trim();
+
+    // Extract the [ticket] param from the URL path to avoid type issues
+    const url = new URL(req.url);
+    // .../api/render/<ticket>
+    const segments = url.pathname.split("/").filter(Boolean);
+    const ticketId = segments[segments.length - 1]?.trim();
     if (!ticketId) return json({ error: "Missing ticket" }, 400);
 
     // 1) Atomically consume ticket if not expired
@@ -60,7 +61,7 @@ export async function GET(
       return json({ error: "Session expired" }, 410);
     }
 
-    // 3) Get storage path
+    // 3) Get storage path for the image
     const imgQ = await supabase
       .from("images")
       .select("path")
@@ -73,7 +74,7 @@ export async function GET(
     const storageKey =
       (imgQ.data as { path: string | null }).path ?? image_id;
 
-    // 4) Download from Supabase Storage (bucket: pixelock)
+    // 4) Download from Supabase Storage (bucket: "pixelock")
     const dl = await supabase.storage.from("pixelock").download(storageKey);
     if (dl.error || !dl.data) {
       return json({ error: dl.error?.message || "Not found" }, 404);
@@ -81,7 +82,7 @@ export async function GET(
 
     const buf = Buffer.from(await dl.data.arrayBuffer());
 
-    // 5) Content type guess
+    // 5) Best-effort content type from file extension
     let contentType = "application/octet-stream";
     const lower = storageKey.toLowerCase();
     if (/\.(jpe?g)$/.test(lower)) contentType = "image/jpeg";
