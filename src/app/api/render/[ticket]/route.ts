@@ -1,21 +1,23 @@
-import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
 
+// Netlify/Next can be picky about the context param's type.
+// Use the Web Fetch types (Request/Response) and leave the 2nd arg untyped.
 export const dynamic = "force-dynamic";
 
-export async function POST(
-  req: NextRequest,
-  ctx: { params: { ticket: string } }
-) {
+export async function POST(req: Request, context: any) {
   try {
-    const ticket = ctx?.params?.ticket;
-    if (typeof ticket !== "string" || !ticket.trim()) {
-      return NextResponse.json({ error: "ticket required" }, { status: 400 });
+    const ticket = context?.params?.ticket as string | undefined;
+
+    if (!ticket || typeof ticket !== "string" || !ticket.trim()) {
+      return new Response(JSON.stringify({ error: "ticket required" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
     }
 
-    const supabase = supabaseServer(); // ✅ invoke factory
+    const supabase = supabaseServer();
 
-    // Example query—adjust to your schema
+    // Adjust table/columns to your schema as needed
     const { data, error } = await supabase
       .from("tickets")
       .select("id, status, image_id")
@@ -23,21 +25,27 @@ export async function POST(
       .maybeSingle();
 
     if (error) {
-      return NextResponse.json(
-        { error: `DB error: ${error.message}` },
-        { status: 500 }
+      return new Response(
+        JSON.stringify({ error: `DB error: ${error.message}` }),
+        { status: 500, headers: { "content-type": "application/json" } }
       );
     }
 
     if (!data) {
-      return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+      return new Response(JSON.stringify({ error: "Ticket not found" }), {
+        status: 404,
+        headers: { "content-type": "application/json" },
+      });
     }
 
-    return NextResponse.json({ ticket: data }, { status: 200 });
+    return new Response(JSON.stringify({ ticket: data }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message ?? "Server error" },
-      { status: 500 }
-    );
+    return new Response(JSON.stringify({ error: e?.message ?? "Server error" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
   }
 }
