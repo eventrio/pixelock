@@ -133,7 +133,7 @@ export async function POST(req: Request) {
     let pin = await extractPin(req);
 
     // If no pin provided by client, generate one server-side
-    let (!pin) {
+    if (!pin) {
       pin = Array.from({ length: PIN_LEN }, () =>
         Math.floor(Math.random() * 10)
       ).join("");
