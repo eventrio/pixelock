@@ -1,5 +1,5 @@
 // src/app/api/render/[ticket]/route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
 
 export const runtime = "nodejs";
@@ -15,17 +15,17 @@ function json(data: any, status = 200) {
   });
 }
 
+// ✅ Note the function signature: destructure `{ params }` in the 2nd arg
 export async function GET(
-  _req: NextRequest,
-  ctx: { params: { ticket: string } }
+  _req: Request,
+  { params }: { params: { ticket: string } }
 ) {
   try {
     const supabase = supabaseServer();
-    const ticketId = ctx.params.ticket?.trim();
+    const ticketId = params.ticket?.trim();
     if (!ticketId) return json({ error: "Missing ticket" }, 400);
 
-    // 1) Atomically consume the ticket (one-time)
-    // Also ensure it's not expired
+    // 1) Atomically consume ticket if not expired
     const nowIso = new Date().toISOString();
     const consume = await supabase
       .from("tickets")
@@ -41,7 +41,7 @@ export async function GET(
 
     const sessionId = consume.data.session_id as string;
 
-    // 2) Load the view session and check expiry
+    // 2) Load & validate session
     const sessQ = await supabase
       .from("view_sessions")
       .select("image_id, expires_at")
@@ -60,7 +60,7 @@ export async function GET(
       return json({ error: "Session expired" }, 410);
     }
 
-    // 3) Find the storage path for the image
+    // 3) Get storage path
     const imgQ = await supabase
       .from("images")
       .select("path")
@@ -71,9 +71,9 @@ export async function GET(
     if (!imgQ.data) return json({ error: "Image not found" }, 404);
 
     const storageKey =
-      (imgQ.data as { path: string | null }).path ?? image_id; // fallback
+      (imgQ.data as { path: string | null }).path ?? image_id;
 
-    // 4) Download from Supabase Storage (bucket: "pixelock")
+    // 4) Download from Supabase Storage (bucket: pixelock)
     const dl = await supabase.storage.from("pixelock").download(storageKey);
     if (dl.error || !dl.data) {
       return json({ error: dl.error?.message || "Not found" }, 404);
@@ -81,7 +81,7 @@ export async function GET(
 
     const buf = Buffer.from(await dl.data.arrayBuffer());
 
-    // 5) Best-effort content type from file extension
+    // 5) Content type guess
     let contentType = "application/octet-stream";
     const lower = storageKey.toLowerCase();
     if (/\.(jpe?g)$/.test(lower)) contentType = "image/jpeg";
