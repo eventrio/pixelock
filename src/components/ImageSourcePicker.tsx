@@ -6,9 +6,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 const PREVIEW_BOX_PX = 250;
 
 type UploadResp = { token: string; pin: string; shareText: string };
-type Props = { onUploaded: (resp: UploadResp) => void };
+type Props = {
+  onUploaded: (resp: UploadResp) => void;
+  /** PIN to authorize the upload (pass from parent). */
+  pin?: string;
+};
 
-export default function ImageSourcePicker({ onUploaded }: Props) {
+export default function ImageSourcePicker({ onUploaded, pin }: Props) {
   const [mode, setMode] = useState<'idle' | 'camera' | 'link'>('idle');
   const [busy, setBusy] = useState(false);
 
@@ -65,10 +69,21 @@ export default function ImageSourcePicker({ onUploaded }: Props) {
       try {
         const fd = new FormData();
         fd.append('file', blob, filename);
-        const res = await fetch('/api/upload', { method: 'POST', body: fd });
+
+        // Belt + suspenders: put PIN in headers and in form (server accepts either)
+        const headers: Record<string, string> = {};
+        if (pin && pin.trim()) {
+          headers['Authorization'] = `Bearer ${pin}`;
+          headers['X-Pin'] = pin;
+          fd.append('pin', pin); // also include as form field
+        }
+
+        const res = await fetch('/api/upload', { method: 'POST', headers, body: fd });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error || 'Upload failed');
+
         onUploaded(json);
+
         // reset after successful upload
         setFile(null);
         if (previewURL) URL.revokeObjectURL(previewURL);
@@ -80,7 +95,7 @@ export default function ImageSourcePicker({ onUploaded }: Props) {
         setBusy(false);
       }
     },
-    [onUploaded, previewURL]
+    [onUploaded, previewURL, pin]
   );
 
   // device file selection / drop

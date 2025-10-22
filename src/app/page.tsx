@@ -97,7 +97,8 @@ Pin: ${resp.pin}`;
         </p>
 
         {/* Uploader */}
-        <ImageSourcePicker onUploaded={setResp} />
+        <ImageSourcePicker onUploaded={handleUploaded} pin={pin} />
+
 
         {/* Inline Share box (kept) */}
         {resp && (
