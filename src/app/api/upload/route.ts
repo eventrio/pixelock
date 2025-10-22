@@ -1,4 +1,3 @@
-// src/app/api/upload/route.ts
 import "server-only";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +9,10 @@ function json(payload: unknown, status = 200) {
     headers: { "content-type": "application/json" },
   });
 }
+
+// ---------- Types for precise narrowing ----------
+type PreflightOk = { ok: true; base: string };
+type PreflightErr = { ok: false; reason: string };
 
 // Safe diagnostics without consuming body
 async function debugDump(req: Request) {
@@ -118,7 +121,7 @@ async function extractPin(req: Request): Promise<string | undefined> {
 }
 
 // connectivity preflight to Supabase Storage
-async function preflightStorage(): Promise<{ ok: true; base: string } | { ok: false; reason: string }> {
+async function preflightStorage(): Promise<PreflightOk | PreflightErr> {
   const base = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim().replace(/\/+$/, "");
   const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
 
@@ -179,13 +182,14 @@ export async function POST(req: Request) {
     // Preflight Supabase connectivity (clearer than "fetch failed")
     const pre = await preflightStorage();
     if (!pre.ok) {
+      const reason = (pre as PreflightErr).reason; // explicit narrowing
       return json({
-        error: `Supabase connectivity check failed: ${pre.reason}`,
+        error: `Supabase connectivity check failed: ${reason}`,
         hint: "On Netlify, set NODE_OPTIONS=--dns-result-order=ipv4first and verify NEXT_PUBLIC_SUPABASE_URL is the full https://...supabase.co URL.",
       }, 500);
     }
+    const base = (pre as PreflightOk).base; // explicit narrowing
 
-    const base = pre.base!;
     const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
     const bucket = "uploads"; // adjust if your bucket differs
 
@@ -225,7 +229,8 @@ export async function POST(req: Request) {
     // POST /storage/v1/object/{bucket}/{object}
     const uploadUrl = `${base}/storage/v1/object/${encodeURIComponent(bucket)}/${key.split("/").map(encodeURIComponent).join("/")}`;
 
-    // Optional: upsert=true if you want to overwrite; we default to false here
+    const ctl = new AbortController();
+    const timeout = setTimeout(() => ctl.abort(), 15000);
     const res = await fetch(uploadUrl, {
       method: "POST",
       headers: {
@@ -235,14 +240,11 @@ export async function POST(req: Request) {
         "x-upsert": "false",
       },
       body: payload,
-      // reasonable timeout
-      // note: undici supports AbortController
-      signal: (() => {
-        const ctl = new AbortController();
-        setTimeout(() => ctl.abort(), 15000);
-        return ctl.signal;
-      })(),
+      signal: ctl.signal,
+    }).catch((e) => {
+      throw new Error(`Network error during upload to ${new URL(base).host}: ${e?.message || e}`);
     });
+    clearTimeout(timeout);
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
