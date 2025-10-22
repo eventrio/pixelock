@@ -1,6 +1,5 @@
 // src/app/api/upload/route.ts
 import "server-only";
-import { supabaseServer } from "@/lib/supabaseServer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs"; // ensure Node runtime on Netlify
@@ -119,11 +118,12 @@ async function extractPin(req: Request): Promise<string | undefined> {
 }
 
 // connectivity preflight to Supabase Storage
-async function preflightStorage(): Promise<{ ok: true } | { ok: false; reason: string }> {
+async function preflightStorage(): Promise<{ ok: true; base: string } | { ok: false; reason: string }> {
   const base = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim().replace(/\/+$/, "");
   const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
 
   if (!base) return { ok: false, reason: "Missing NEXT_PUBLIC_SUPABASE_URL" };
+  if (!/^https:\/\//i.test(base)) return { ok: false, reason: `Invalid NEXT_PUBLIC_SUPABASE_URL (${base})` };
   if (!key) return { ok: false, reason: "Missing SUPABASE_SERVICE_ROLE_KEY" };
 
   const url = `${base}/storage/v1/bucket`;
@@ -146,7 +146,7 @@ async function preflightStorage(): Promise<{ ok: true } | { ok: false; reason: s
     if (!res.ok) {
       return { ok: false, reason: `Supabase HTTP ${res.status} at ${new URL(base).host}/storage/v1/bucket` };
     }
-    return { ok: true };
+    return { ok: true, base };
   } catch (e: any) {
     clearTimeout(t);
     return { ok: false, reason: e?.message || "Unknown network error" };
@@ -176,14 +176,18 @@ export async function POST(req: Request) {
       return json({ error: "Expected multipart/form-data" }, 400);
     }
 
-    // Preflight Supabase connectivity (clearer error than "fetch failed")
+    // Preflight Supabase connectivity (clearer than "fetch failed")
     const pre = await preflightStorage();
     if (!pre.ok) {
       return json({
         error: `Supabase connectivity check failed: ${pre.reason}`,
-        hint: "If you're on Netlify, set NODE_OPTIONS=--dns-result-order=ipv4first and ensure NEXT_PUBLIC_SUPABASE_URL is the full https://...supabase.co URL.",
+        hint: "On Netlify, set NODE_OPTIONS=--dns-result-order=ipv4first and verify NEXT_PUBLIC_SUPABASE_URL is the full https://...supabase.co URL.",
       }, 500);
     }
+
+    const base = pre.base!;
+    const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+    const bucket = "uploads"; // adjust if your bucket differs
 
     // Parse form
     const form = await req.formData();
@@ -193,17 +197,14 @@ export async function POST(req: Request) {
     }
     const file = fileCandidate as File;
 
-    // Optional metadata
+    // Optional metadata (unused by REST upload; keep parsing if you log it)
     const metaRaw = form.get("meta");
     let meta: Record<string, unknown> | undefined;
     if (typeof metaRaw === "string") {
       try { meta = JSON.parse(metaRaw); } catch {}
     }
 
-    // Supabase client (service role)
-    const supabase = supabaseServer();
-
-    const bucket = "uploads"; // adjust if your bucket differs
+    // Build object key
     const name = file.name || "upload.bin";
     const dot = name.lastIndexOf(".");
     const ext = dot >= 0 ? name.slice(dot) : "";
@@ -216,23 +217,44 @@ export async function POST(req: Request) {
       `${String(now.getDate()).padStart(2, "0")}/` +
       `${crypto.randomUUID()}${ext}`;
 
+    // Convert body to Node Buffer (stable on Netlify Node runtime)
     const arrayBuf = await file.arrayBuffer();
     const payload: any = typeof Buffer !== "undefined" ? Buffer.from(arrayBuf) : new Uint8Array(arrayBuf);
 
-    const { error: upErr } = await supabase.storage
-      .from(bucket)
-      .upload(key, payload, {
-        contentType: file.type || "application/octet-stream",
-        upsert: false,
-      });
+    // === Direct REST upload to Supabase Storage ===========================
+    // POST /storage/v1/object/{bucket}/{object}
+    const uploadUrl = `${base}/storage/v1/object/${encodeURIComponent(bucket)}/${key.split("/").map(encodeURIComponent).join("/")}`;
 
-    if (upErr) {
-      return json({ error: `Upload failed: ${upErr.message}` }, 500);
+    // Optional: upsert=true if you want to overwrite; we default to false here
+    const res = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        apikey: serviceKey,
+        authorization: `Bearer ${serviceKey}`,
+        "content-type": file.type || "application/octet-stream",
+        "x-upsert": "false",
+      },
+      body: payload,
+      // reasonable timeout
+      // note: undici supports AbortController
+      signal: (() => {
+        const ctl = new AbortController();
+        setTimeout(() => ctl.abort(), 15000);
+        return ctl.signal;
+      })(),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      return json({
+        error: `Upload failed: HTTP ${res.status} from ${new URL(base).host} (Storage). ${text || ""}`.trim(),
+      }, 500);
     }
+    // =====================================================================
 
     return json({
       ok: true,
-      token: key, // if you later map token differently, adjust here
+      token: key, // you can map token differently later
       pin,
       shareText: `An image has been shared with you!\nFollow the link: /img/${key}\nPin: ${pin}`,
       bucket,
@@ -241,7 +263,6 @@ export async function POST(req: Request) {
       meta: meta ?? null,
     });
   } catch (e: any) {
-    // Enhanced error in debug
     if ((process.env.DEBUG_UPLOAD || "").toString() === "1") {
       try {
         const dbg = await debugDump(req);
