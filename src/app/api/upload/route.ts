@@ -1,7 +1,10 @@
+// src/app/api/upload/route.ts
 import "server-only";
 import { supabaseServer } from "@/lib/supabaseServer";
 
 export const dynamic = "force-dynamic";
+// ✅ Force Node runtime so we have Node's Buffer & stable outbound fetch
+export const runtime = "nodejs";
 
 function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -26,7 +29,9 @@ async function debugDump(req: Request) {
   };
 
   const cookie = clone.headers.get("cookie") || "";
-  const cookieKeys = Array.from(cookie.matchAll(/(?:^|;\s*)([^=;,\s]+)=/g)).map((m) => m[1]).slice(0, 50);
+  const cookieKeys = Array.from(cookie.matchAll(/(?:^|;\s*)([^=;,\s]+)=/g))
+    .map((m) => m[1])
+    .slice(0, 50);
 
   const queryKeys = Array.from(url.searchParams.keys()).slice(0, 50);
 
@@ -92,7 +97,7 @@ async function extractPin(req: Request): Promise<string | undefined> {
         const key = name.toLowerCase();
         if (key === "pin" || key === "code" || key === "passcode" || key === "p") {
           if (typeof value === "string" && value.trim()) {
-            return value.trim(); // ← fixed: close the paren
+            return value.trim();
           }
         }
       }
@@ -140,16 +145,19 @@ export async function POST(req: Request) {
     }
 
     // Enforce length (covers both client-supplied and generated pins)
-        if (pin.length !== PIN_LEN) {
+    if (pin.length !== PIN_LEN) {
       return json({ error: `Invalid pin length; expected ${PIN_LEN} digits` }, 400);
     }
 
+    // Validate envs early (helps avoid "fetch failed")
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      return json({ error: "Server misconfig: NEXT_PUBLIC_SUPABASE_URL is missing" }, 500);
+    }
 
-        const contentType = (req.headers.get("content-type") || "").toLowerCase();
+    const contentType = (req.headers.get("content-type") || "").toLowerCase();
     if (!contentType.includes("multipart/form-data")) {
       return json({ error: "Expected multipart/form-data" }, 400);
     }
-
 
     const form = await req.formData();
     const fileCandidate = form.get("file") ?? form.get("image") ?? form.get("photo") ?? form.get("upload");
@@ -165,7 +173,9 @@ export async function POST(req: Request) {
       try { meta = JSON.parse(metaRaw); } catch {}
     }
 
+    // Init Supabase server client
     const supabase = supabaseServer();
+
     const bucket = "uploads"; // change if needed
 
     const fileName = file.name || "upload.bin";
@@ -182,14 +192,21 @@ export async function POST(req: Request) {
 
     const arrayBuf = await file.arrayBuffer();
 
+    // ✅ Use Node Buffer when available; fallback to Uint8Array for edge (shouldn't hit since runtime=nodejs)
+    const payload: any =
+      typeof Buffer !== "undefined" ? Buffer.from(arrayBuf) : new Uint8Array(arrayBuf);
+
     const { error: upErr } = await supabase.storage
       .from(bucket)
-      .upload(key, new Uint8Array(arrayBuf), {
+      .upload(key, payload, {
         contentType: file.type || "application/octet-stream",
         upsert: false,
       });
 
-    if (upErr) return json({ error: `Upload failed: ${upErr.message}` }, 500);
+    if (upErr) {
+      const message = upErr.message || "unknown";
+      return json({ error: `Upload failed: ${message}` }, 500);
+    }
 
     return json({
       ok: true,
