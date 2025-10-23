@@ -7,12 +7,8 @@ import RevealCanvas from "@/components/RevealCanvas";
 type VerifyResp = { sessionId: string; error?: string };
 type TicketResp = { ticket: string; error?: string };
 
-export default function ViewPage({
-  params,
-}: {
-  params: { token: string };
-}) {
-  const token = params.token;
+export default function ViewPage({ params }: any) {
+  const token: string = params?.token ?? "";
 
   const [pin, setPin] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -97,8 +93,7 @@ export default function ViewPage({
         <div className="mt-4">
           <p className="text-sm text-neutral-700 mb-2">{statusMsg}</p>
 
-          {/* No more "Start Viewing" button — show pixelated image immediately.
-              User presses & holds to reveal inside RevealCanvas. */}
+          {/* Show the pixelated image immediately; press & hold to reveal */}
           {ticketUrl && (
             <RevealCanvas
               ticketUrl={ticketUrl}

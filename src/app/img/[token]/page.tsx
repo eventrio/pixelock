@@ -1,10 +1,8 @@
-// Server Component: alias /img/<token> → /render/<token>
+// src/app/img/[token]/page.tsx
 import { redirect } from "next/navigation";
-import type { PageProps } from "next";
 
-export default function ImgAliasPage(
-  { params }: PageProps<{ token: string }>
-) {
-  const token = params.token;
-  redirect(`/render/${encodeURIComponent(token)}`);
+// Minimal typing so it always satisfies Next's PageProps inference
+export default function ImgAliasPage({ params }: any) {
+  const token = encodeURIComponent(params?.token ?? "");
+  redirect(`/render/${token}`);
 }
