@@ -14,6 +14,16 @@ export default function ViewPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [ticketUrl, setTicketUrl] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string>('');
+// Redirect /img/<token> → /render/<token>
+import { redirect } from "next/navigation";
+
+export default function ImgAliasPage({
+  params,
+}: { params: { token: string } }) {
+  const token = params.token;
+  // encode in case token contains slashes or special chars
+  redirect(`/render/${encodeURIComponent(token)}`);
+}
 
   // ---- API calls ----
   async function verify() {
