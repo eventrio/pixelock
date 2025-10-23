@@ -122,11 +122,17 @@ async function extractPin(req: Request): Promise<string | undefined> {
 
 // connectivity preflight to Supabase Storage
 async function preflightStorage(): Promise<PreflightOk | PreflightErr> {
-  const base = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim().replace(/\/+$/, "");
+  // 🔧 prefer SUPABASE_BASE_URL, then NEXT_PUBLIC_SUPABASE_URL
+  const base = (
+    process.env.SUPABASE_BASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    ""
+  ).trim().replace(/\/+$/, "");
+
   const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
 
-  if (!base) return { ok: false, reason: "Missing NEXT_PUBLIC_SUPABASE_URL" };
-  if (!/^https:\/\//i.test(base)) return { ok: false, reason: `Invalid NEXT_PUBLIC_SUPABASE_URL (${base})` };
+  if (!base) return { ok: false, reason: "Missing SUPABASE_BASE_URL/NEXT_PUBLIC_SUPABASE_URL" };
+  if (!/^https:\/\//i.test(base)) return { ok: false, reason: `Invalid Supabase base URL (${base})` };
   if (!key) return { ok: false, reason: "Missing SUPABASE_SERVICE_ROLE_KEY" };
 
   const url = `${base}/storage/v1/bucket`;
@@ -185,7 +191,7 @@ export async function POST(req: Request) {
       const reason = (pre as PreflightErr).reason; // explicit narrowing
       return json({
         error: `Supabase connectivity check failed: ${reason}`,
-        hint: "On Netlify, set NODE_OPTIONS=--dns-result-order=ipv4first and verify NEXT_PUBLIC_SUPABASE_URL is the full https://...supabase.co URL.",
+        hint: "On Netlify, set NODE_OPTIONS=--dns-result-order=ipv4first and verify the Supabase base URL is correct.",
       }, 500);
     }
     const base = (pre as PreflightOk).base; // explicit narrowing
@@ -201,7 +207,7 @@ export async function POST(req: Request) {
     }
     const file = fileCandidate as File;
 
-    // Optional metadata (unused by REST upload; keep parsing if you log it)
+    // Optional metadata
     const metaRaw = form.get("meta");
     let meta: Record<string, unknown> | undefined;
     if (typeof metaRaw === "string") {
@@ -211,7 +217,7 @@ export async function POST(req: Request) {
     // Build object key
     const name = file.name || "upload.bin";
     const dot = name.lastIndexOf(".");
-    const ext = dot >= 0 ? name.slice(dot) : "";
+    the const ext = dot >= 0 ? name.slice(dot) : "";
 
     const now = new Date();
     const key =
@@ -227,7 +233,10 @@ export async function POST(req: Request) {
 
     // === Direct REST upload to Supabase Storage ===========================
     // POST /storage/v1/object/{bucket}/{object}
-    const uploadUrl = `${base}/storage/v1/object/${encodeURIComponent(bucket)}/${key.split("/").map(encodeURIComponent).join("/")}`;
+    const uploadUrl = `${base}/storage/v1/object/${encodeURIComponent(bucket)}/${key
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/")}`;
 
     const ctl = new AbortController();
     const timeout = setTimeout(() => ctl.abort(), 15000);
@@ -256,7 +265,7 @@ export async function POST(req: Request) {
 
     return json({
       ok: true,
-      token: key, // you can map token differently later
+      token: key,
       pin,
       shareText: `An image has been shared with you!\nFollow the link: /img/${key}\nPin: ${pin}`,
       bucket,
