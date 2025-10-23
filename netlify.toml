@@ -1,0 +1,22 @@
+# netlify.toml – force Node runtime and IPv4 DNS for functions
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["undici"]
+  included_files = []
+
+# Enable Next.js plugin (Netlify auto-detects, but keeping this explicit is fine)
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Environment overrides for all contexts
+[build.environment]
+  NODE_VERSION = "20.18.0"         # pin a stable Node with Undici fixes
+  NODE_OPTIONS = "--dns-result-order=ipv4first"  # prefer IPv4 to avoid IPv6 egress issues
+
+# (Optional) allow more log time if you're adding more diagnostics later
+[functions."*"]
+  timeout = 27
