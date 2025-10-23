@@ -9,6 +9,30 @@ function json(payload: unknown, status = 200) {
     headers: { "content-type": "application/json" },
   });
 }
+// After successful Storage upload (res.ok)
+// Ensure a row exists in public.images keyed by the storage path
+try {
+  const restUrl = `${base}/rest/v1/images?on_conflict=key`;
+  const insertBody = [{ key }]; // 'key' is the storage object path you already built
+
+  const up = await fetch(restUrl, {
+    method: "POST",
+    headers: {
+      apikey: serviceKey,
+      authorization: `Bearer ${serviceKey}`,
+      "content-type": "application/json",
+      Prefer: "return=representation,resolution=merge-duplicates",
+    },
+    body: JSON.stringify(insertBody),
+  });
+
+  if (!up.ok) {
+    const txt = await up.text().catch(() => "");
+    console.warn("images upsert failed", up.status, txt);
+  }
+} catch (e) {
+  console.warn("images upsert exception", (e as Error)?.message || e);
+}
 
 // ---------- Types for precise narrowing ----------
 type PreflightOk = { ok: true; base: string };

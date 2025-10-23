@@ -1,7 +1,7 @@
 // app/api/verify-pin/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { supabaseServer } from "@/lib/supabaseServer"; // now a function you call
+import { supabaseServer } from "@/lib/supabaseServer"; // factory
 import { verifyPin } from "@/lib/crypto";
 
 export const runtime = "nodejs";
@@ -21,30 +21,32 @@ export async function POST(req: NextRequest) {
   try {
     // 0) Parse input
     const body = await req.json().catch(() => ({} as any));
-    const token = String(body.token ?? body.id ?? "").trim();
+    const token = String(body.token ?? body.id ?? "").trim(); // token == storage object key (e.g. "pins/1234/.../uuid.jpg")
     const pin = String(body.pin ?? "").trim();
     if (!token || !pin) return json({ error: "Missing token/pin" }, 400);
 
-    // 🔹 1) Get a server Supabase client (this is the new bit)
+    // 1) Server Supabase client
     const supabase = supabaseServer();
 
-    // 2) Lookup image by token
+    // 2) Lookup image by STORAGE KEY, not "token" column
+    //    We intentionally select only existing columns to avoid schema errors.
     const imgQ = await supabase
       .from("images")
-      .select("id, max_views, views, expires_at")
-      .eq("token", token)
+      .select("id, views")
+      .eq("key", token)        // <-- key, not token
       .maybeSingle();
 
     if (imgQ.error) return json({ error: imgQ.error.message }, 500);
     if (!imgQ.data) return json({ error: "Not found" }, 404);
 
-    const { id: image_id, max_views, views, expires_at } = imgQ.data;
+    const { id: image_id, views } = imgQ.data;
 
-    // 3) Check expiry / view limits
-    const now = Date.now();
-    const expired = expires_at ? new Date(expires_at).getTime() <= now : false;
-    const limitReached = (views ?? 0) >= (max_views ?? 1);
-    if (expired || limitReached) return json({ error: "Share expired" }, 410);
+    // 3) View limits (use env; avoid selecting non-existent DB columns)
+    const MAX_VIEWS = Number(process.env.MAX_VIEWS ?? 1);
+    const currentViews = Number(views ?? 0);
+    if (currentViews >= Math.max(1, MAX_VIEWS)) {
+      return json({ error: "Share expired" }, 410);
+    }
 
     // 4) Get stored PIN hash
     const pinQ = await supabase
@@ -54,13 +56,18 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (pinQ.error) return json({ error: pinQ.error.message }, 500);
-    if (!pinQ.data) return json({ error: "Share not available" }, 410);
+    if (!pinQ.data) {
+      // This means no share was created for this image_id.
+      // Ensure your /api/upload route inserts pin_hash into image_shares at upload time.
+      return json({ error: "Share not available" }, 410);
+    }
 
     // 5) Verify PIN
     const ok = await verifyPin(pin, pinQ.data.pin_hash);
     if (!ok) return json({ error: "Invalid PIN" }, 401);
 
     // 6) Create short-lived view session + one-use ticket
+    const now = Date.now();
     const ttlSec = Number(process.env.VIEW_SECONDS ?? 15);
     const ttlMs = Math.max(1, ttlSec) * 1000;
     const sessionId = randomUUID();
