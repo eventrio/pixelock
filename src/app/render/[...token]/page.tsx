@@ -1,4 +1,3 @@
-// src/app/render/[token]/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -8,14 +7,14 @@ type VerifyResp = { sessionId: string; error?: string };
 type TicketResp = { ticket: string; error?: string };
 
 export default function ViewPage({ params }: any) {
-  const token: string = params?.token ?? "";
+  // params.token is string[] for a catch-all route
+  const token: string = (Array.isArray(params?.token) ? params.token.join("/") : "") || "";
 
   const [pin, setPin] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [ticketUrl, setTicketUrl] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string>("");
 
-  // ---- API calls ----
   async function verify() {
     setStatusMsg("");
     const res = await fetch("/api/verify-pin", {
@@ -47,7 +46,6 @@ export default function ViewPage({ params }: any) {
     setTicketUrl(`/api/render/${json.ticket}`);
   }
 
-  // After a successful unlock, automatically fetch a ticket
   useEffect(() => {
     if (!sessionId) return;
     setStatusMsg(
@@ -93,7 +91,6 @@ export default function ViewPage({ params }: any) {
         <div className="mt-4">
           <p className="text-sm text-neutral-700 mb-2">{statusMsg}</p>
 
-          {/* Show the pixelated image immediately; press & hold to reveal */}
           {ticketUrl && (
             <RevealCanvas
               ticketUrl={ticketUrl}
