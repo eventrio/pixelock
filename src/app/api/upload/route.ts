@@ -217,7 +217,7 @@ export async function POST(req: Request) {
     // Build object key
     const name = file.name || "upload.bin";
     const dot = name.lastIndexOf(".");
-    the const ext = dot >= 0 ? name.slice(dot) : "";
+    const ext = dot >= 0 ? name.slice(dot) : "";
 
     const now = new Date();
     const key =
