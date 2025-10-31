@@ -1,44 +1,98 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
 
-export default function CountdownHoldViewer({ src, seconds, onExpire }: { src: string; seconds: number; onExpire: () => void }) {
-  const [remaining, setRemaining] = useState(seconds);
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+export default function CountdownHoldViewer({
+  src,
+  seconds = 15,
+  onExpire,
+}: {
+  src: string;
+  seconds?: number;
+  onExpire: () => void;
+}) {
   const [revealed, setRevealed] = useState(false);
-  const timerRef = useRef<number | null>(null);
+  const [remaining, setRemaining] = useState(seconds);
+  const startedRef = useRef(false); // once user reveals, countdown keeps ticking
+
+  // Build a safe, encoded SVG "mosaic" overlay
+  const BLOCK = 28; // px “block size”
+  const mosaicUrl = useMemo(() => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${BLOCK}" height="${BLOCK}">
+      <rect width="${BLOCK / 2}" height="${BLOCK / 2}" fill="#ddd"/>
+      <rect x="${BLOCK / 2}" y="${BLOCK / 2}" width="${BLOCK / 2}" height="${BLOCK / 2}" fill="#ddd"/>
+    </svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  }, [BLOCK]);
+
+  // Countdown: starts on first reveal and ticks regardless of holding
+  useEffect(() => {
+    if (!startedRef.current && revealed) {
+      startedRef.current = true;
+    }
+  }, [revealed]);
 
   useEffect(() => {
-    if (revealed && remaining > 0 && timerRef.current == null) {
-      timerRef.current = window.setInterval(() => setRemaining((s) => s - 1), 1000);
-    }
+    if (!startedRef.current) return;
     if (remaining <= 0) {
-      if (timerRef.current) clearInterval(timerRef.current);
       onExpire();
+      return;
     }
-    return () => {};
-  }, [revealed, remaining, onExpire]);
+    const t = setInterval(() => setRemaining((s) => s - 1), 1000);
+    return () => clearInterval(t);
+  }, [remaining, onExpire]);
 
-  function down() { setRevealed(true); }
-  function up() { /* visual pixelate again handled by CSS */ }
+  // Pointer handlers for press & hold
+  function holdStart() {
+    setRevealed(true);
+  }
+  function holdEnd() {
+    setRevealed(false);
+  }
 
   return (
-    <div className="w-full">
-      <div className="relative mx-auto mb-3 grid h-80 w-full max-w-3xl place-items-center overflow-hidden rounded-xl border">
+    <div className="mx-auto w-full max-w-6xl">
+      <div
+        className="relative mx-auto h-[70vh] w-full overflow-hidden rounded-2xl border bg-black"
+        onMouseDown={holdStart}
+        onMouseUp={holdEnd}
+        onMouseLeave={holdEnd}
+        onTouchStart={holdStart}
+        onTouchEnd={holdEnd}
+      >
+        {/* image */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt="shared" className={`h-full w-full object-contain ${revealed ? '' : 'blur-[8px] contrast-125'} transition`} />
-        {!revealed && <div className="pointer-events-none absolute inset-0 bg-[url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"8\"><rect width=\"4\" height=\"4\" fill=\"%23ddd\"/><rect x=\"4\" y=\"4\" width=\"4\" height=\"4\" fill=\"%23ddd\"/></svg>')] opacity-60"/>}
+        <img
+          src={src}
+          alt="shared"
+          className={`absolute inset-0 h-full w-full object-contain transition ${
+            revealed ? '' : 'blur-[8px] contrast-125'
+          }`}
+        />
+
+        {/* safe mosaic overlay via style instead of Tailwind arbitrary bg url */}
+        {!revealed && (
+          <div
+            className="pointer-events-none absolute inset-0 opacity-60"
+            style={{ backgroundImage: `url(${mosaicUrl})` }}
+          />
+        )}
       </div>
-      <div className="flex items-center gap-3">
+
+      {/* Controls / countdown */}
+      <div className="mt-4 flex items-center gap-3">
         <button
+          type="button"
           className="btn-primary"
-          onMouseDown={down}
-          onMouseUp={up}
-          onTouchStart={down}
-          onTouchEnd={up}
-          disabled={remaining <= 0}
+          onMouseDown={holdStart}
+          onMouseUp={holdEnd}
+          onMouseLeave={holdEnd}
+          onTouchStart={holdStart}
+          onTouchEnd={holdEnd}
         >
-          Press & Hold to View
+          Press &amp; Hold to View
         </button>
-        <div className="text-sm text-gray-700">{{Math.max(remaining, 0)}}s</div>
+        <span className="text-sm text-gray-600">{remaining}s</span>
       </div>
     </div>
   );
