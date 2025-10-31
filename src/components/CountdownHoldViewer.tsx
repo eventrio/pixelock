@@ -20,7 +20,7 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
   const [imgLoaded, setImgLoaded] = useState(false);
   const [revealed, setRevealed] = useState(false);
 
-  // Mobile detection (more robust)
+  // Robust mobile detection
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     const coarse =
@@ -31,14 +31,14 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
     setIsMobile(!!coarse);
   }, []);
 
-  // Dual-hold state (mobile only)
+  // Dual-hold flags
   const [holdA, setHoldA] = useState(false);
   const [holdB, setHoldB] = useState(false);
 
   // Pixel block size
   const BLOCK = 28;
 
-  // Load image once
+  // Load image
   useEffect(() => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -47,23 +47,19 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
     img.onload = () => {
       imgElRef.current = img;
       setImgLoaded(true);
-      draw(false); // initial pixelated
-    };
-    img.onerror = () => {
-      // still draw a blank so canvas sizes correctly
       draw(false);
     };
+    img.onerror = () => draw(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src]);
 
-  // Redraw when revealed state or size changes
+  // Redraw when state/size changes
   useEffect(() => {
     if (!imgLoaded) return;
     draw(revealed);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealed, imgLoaded]);
 
-  // Resize observer to keep canvas responsive
   useEffect(() => {
     const node = containerRef.current;
     if (!node) return;
@@ -73,9 +69,9 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealed]);
 
-  // Compute reveal based on holds
+  // Compute reveal
   useEffect(() => {
-    const shouldReveal = isMobile ? holdA && holdB : holdA;
+    const shouldReveal = isMobile ? (holdA && holdB) : holdA;
     setRevealed(shouldReveal);
 
     if (shouldReveal && !startedRef.current) {
@@ -95,12 +91,22 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
     }
   }, [holdA, holdB, isMobile, onExpire]);
 
-  function startHoldA() { setHoldA(true); }
-  function endHoldA() { setHoldA(false); }
-  function startHoldB() { setHoldB(true); }
-  function endHoldB() { setHoldB(false); }
+  // Pointer helpers (cover mouse, touch, pen)
+  function downA(e: React.PointerEvent | React.MouseEvent | React.TouchEvent) {
+    // prevent text selection / context menu / scroll-while-pressing
+    // @ts-ignore
+    if (e.preventDefault) e.preventDefault();
+    setHoldA(true);
+  }
+  function upA() { setHoldA(false); }
+  function downB(e: React.PointerEvent | React.MouseEvent | React.TouchEvent) {
+    // @ts-ignore
+    if (e.preventDefault) e.preventDefault();
+    setHoldB(true);
+  }
+  function upB() { setHoldB(false); }
 
-  // Core renderer: draw either pixelated or full-res to canvas
+  // Canvas renderer
   function draw(showOriginal: boolean) {
     const container = containerRef.current;
     const canvas = canvasRef.current;
@@ -111,21 +117,17 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
 
     const cw = Math.max(1, Math.floor(container.clientWidth));
     const ch = Math.max(1, Math.floor(container.clientHeight));
-    canvas.width = cw;
-    canvas.height = ch;
+    canvas.width = cw; canvas.height = ch;
 
     const img = imgElRef.current;
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, cw, ch);
-
     if (!img) return;
 
-    const iw = img.naturalWidth;
-    const ih = img.naturalHeight;
+    const iw = img.naturalWidth, ih = img.naturalHeight;
     if (!iw || !ih) return;
 
     if (showOriginal) {
-      // Draw full-quality with object-contain
       const ratio = Math.min(cw / iw, ch / ih);
       const dw = Math.floor(iw * ratio);
       const dh = Math.floor(ih * ratio);
@@ -134,7 +136,6 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
       ctx.imageSmoothingEnabled = true;
       ctx.drawImage(img, dx, dy, dw, dh);
     } else {
-      // Pixelated: render small then upscale without smoothing
       const scaledW = Math.max(1, Math.floor(cw / BLOCK));
       const scaledH = Math.max(1, Math.floor(ch / BLOCK));
       const ratioDown = Math.min(scaledW / iw, scaledH / ih);
@@ -144,11 +145,8 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
       const ty = Math.floor((scaledH - th) / 2);
 
       const off = document.createElement('canvas');
-      off.width = scaledW;
-      off.height = scaledH;
-      const octx = off.getContext('2d');
-      if (!octx) return;
-
+      off.width = scaledW; off.height = scaledH;
+      const octx = off.getContext('2d'); if (!octx) return;
       octx.imageSmoothingEnabled = false;
       octx.fillStyle = '#000';
       octx.fillRect(0, 0, scaledW, scaledH);
@@ -169,8 +167,7 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
     <div className="mx-auto w-full max-w-6xl">
       <div
         ref={containerRef}
-        className="relative mx-auto h-[70vh] w-full overflow-hidden rounded-2xl border bg-black"
-        // Kill context menus / long-press actions
+        className="relative mx-auto h-[70vh] w-full select-none overflow-hidden rounded-2xl border bg-black"
         onContextMenu={(e) => e.preventDefault()}
         style={{
           WebkitTouchCallout: 'none',
@@ -178,40 +175,49 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
           userSelect: 'none',
         }}
       >
-        {/* Single canvas for both states */}
         <canvas
           ref={canvasRef}
           className="absolute inset-0 h-full w-full"
-          // extra guard
           onContextMenu={(e) => e.preventDefault()}
         />
       </div>
 
-      {/* Controls */}
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        {/* Primary hold */}
+        {/* Primary hold (desktop & mobile) */}
         <button
           type="button"
           className="btn-primary select-none"
-          onMouseDown={startHoldA}
-          onMouseUp={endHoldA}
-          onMouseLeave={endHoldA}
-          onTouchStart={startHoldA}
-          onTouchEnd={endHoldA}
+          // Pointer events cover mouse/touch/pen
+          onPointerDown={downA}
+          onPointerUp={upA}
+          onPointerCancel={upA}
+          onPointerLeave={upA}
+          // Back-compat (Safari older)
+          onMouseDown={downA as any}
+          onMouseUp={upA as any}
+          onMouseLeave={upA as any}
+          onTouchStart={downA as any}
+          onTouchEnd={upA as any}
+          style={{ touchAction: 'none' }}
         >
           Press &amp; Hold to View
         </button>
 
-        {/* Secondary hold: show immediately on mobile so it’s obvious */}
+        {/* Secondary hold (mobile only) */}
         {isMobile && (
           <button
             type="button"
             className="btn-primary select-none"
-            onMouseDown={startHoldB}
-            onMouseUp={endHoldB}
-            onMouseLeave={endHoldB}
-            onTouchStart={startHoldB}
-            onTouchEnd={endHoldB}
+            onPointerDown={downB}
+            onPointerUp={upB}
+            onPointerCancel={upB}
+            onPointerLeave={upB}
+            onMouseDown={downB as any}
+            onMouseUp={upB as any}
+            onMouseLeave={upB as any}
+            onTouchStart={downB as any}
+            onTouchEnd={upB as any}
+            style={{ touchAction: 'none' }}
           >
             Hold with other thumb
           </button>
