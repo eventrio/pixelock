@@ -182,12 +182,12 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
         />
       </div>
 
-            {/* Controls */}
-      <div className="mt-4 flex items-center gap-3 overflow-x-auto">
+      {/* Controls row: keep on one line; allow horizontal scroll on tiny screens */}
+      <div className="mt-4 flex flex-nowrap items-center gap-3 overflow-x-auto">
         {/* Primary hold (desktop & mobile) */}
         <button
           type="button"
-          className="btn-primary shrink-0 px-4 py-3 text-sm sm:text-base min-w-[160px] sm:min-w-[200px] select-none"
+          className="btn-primary shrink-0 select-none px-4 py-3 text-sm sm:text-base"
           onPointerDown={downA}
           onPointerUp={upA}
           onPointerCancel={upA}
@@ -202,11 +202,11 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
           Press &amp; Hold to View
         </button>
 
-        {/* Secondary hold (mobile only) — salmon accent */}
+        {/* Secondary hold (mobile only) — salmon accent & to the right */}
         {isMobile && (
           <button
             type="button"
-            className="shrink-0 px-4 py-3 text-sm sm:text-base min-w-[160px] sm:min-w-[200px] rounded-xl font-semibold text-white select-none
+            className="shrink-0 select-none rounded-xl px-4 py-3 text-sm font-semibold text-white sm:text-base
                        bg-[#ED6F74] hover:bg-[#d85f64] active:bg-[#c8565b]
                        focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#ED6F74]"
             onPointerDown={downB}
@@ -224,30 +224,9 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
           </button>
         )}
 
-        <span className="ml-1 text-sm text-gray-600 whitespace-nowrap">{remaining}s</span>
-      </div>
-
-        {/* Secondary hold (mobile only) */}
-        {isMobile && (
-          <button
-            type="button"
-            className="btn-primary select-none"
-            onPointerDown={downB}
-            onPointerUp={upB}
-            onPointerCancel={upB}
-            onPointerLeave={upB}
-            onMouseDown={downB as any}
-            onMouseUp={upB as any}
-            onMouseLeave={upB as any}
-            onTouchStart={downB as any}
-            onTouchEnd={upB as any}
-            style={{ touchAction: 'none' }}
-          >
-            Hold with other thumb
-          </button>
-        )}
-
-        <span className="text-sm text-gray-600">{remaining}s</span>
+        <span className="ml-1 shrink-0 whitespace-nowrap text-sm text-gray-600">
+          {remaining}s
+        </span>
       </div>
     </div>
   );
