@@ -182,17 +182,16 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
         />
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+            {/* Controls */}
+      <div className="mt-4 flex items-center gap-3 overflow-x-auto">
         {/* Primary hold (desktop & mobile) */}
         <button
           type="button"
-          className="btn-primary select-none"
-          // Pointer events cover mouse/touch/pen
+          className="btn-primary shrink-0 px-4 py-3 text-sm sm:text-base min-w-[160px] sm:min-w-[200px] select-none"
           onPointerDown={downA}
           onPointerUp={upA}
           onPointerCancel={upA}
           onPointerLeave={upA}
-          // Back-compat (Safari older)
           onMouseDown={downA as any}
           onMouseUp={upA as any}
           onMouseLeave={upA as any}
@@ -202,6 +201,31 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
         >
           Press &amp; Hold to View
         </button>
+
+        {/* Secondary hold (mobile only) — salmon accent */}
+        {isMobile && (
+          <button
+            type="button"
+            className="shrink-0 px-4 py-3 text-sm sm:text-base min-w-[160px] sm:min-w-[200px] rounded-xl font-semibold text-white select-none
+                       bg-[#ED6F74] hover:bg-[#d85f64] active:bg-[#c8565b]
+                       focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#ED6F74]"
+            onPointerDown={downB}
+            onPointerUp={upB}
+            onPointerCancel={upB}
+            onPointerLeave={upB}
+            onMouseDown={downB as any}
+            onMouseUp={upB as any}
+            onMouseLeave={upB as any}
+            onTouchStart={downB as any}
+            onTouchEnd={upB as any}
+            style={{ touchAction: 'none' }}
+          >
+            Hold with other thumb
+          </button>
+        )}
+
+        <span className="ml-1 text-sm text-gray-600 whitespace-nowrap">{remaining}s</span>
+      </div>
 
         {/* Secondary hold (mobile only) */}
         {isMobile && (
