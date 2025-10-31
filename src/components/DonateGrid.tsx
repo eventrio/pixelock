@@ -17,7 +17,7 @@ export default function DonateGrid() {
         </a>
         <div className="card p-4">
           <div className="flex items-center gap-3">
-            <Image src="/bluewallet_qr.png" alt="Bitcoin QR" width={40} height={40} />
+            <Image src="/bluewallet_qr.jpg" alt="Bitcoin QR" width={40} height={40} />
             <div>
               <div className="font-semibold">Bitcoin</div>
               <div className="text-xs text-gray-600 break-all">bc1qx6dnzmj6updqlz0xfztfra60dpjjtfkf90fwuv</div>
@@ -28,12 +28,16 @@ export default function DonateGrid() {
           <div className="flex items-center gap-3">
             <Image src="/twitterX_logo.png" alt="X" width={40} height={40} />
             <div className="font-semibold">Follow me on X</div>
+            <div className="text-sm text-gray-600">@returnEric</div>
+
           </div>
         </a>
         <a className="card p-4 hover:shadow" href="mailto:eric@7pt5.com">
           <div className="flex items-center gap-3">
             <Image src="/pixelock_email_me.png" alt="Email" width={40} height={40} />
             <div className="font-semibold">Email me</div>
+            <div className="text-sm text-gray-600">eric@7pt5.com</div>
+
           </div>
         </a>
       </div>
