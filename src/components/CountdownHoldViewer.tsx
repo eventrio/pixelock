@@ -187,7 +187,7 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
         {/* Primary hold (desktop & mobile) */}
         <button
           type="button"
-          className="btn-primary shrink-0 select-none px-4 py-3 text-sm sm:text-base"
+          className="btn-primary shrink-0 select-none rounded-xl px-4 py-3 text-sm sm:text-base"
           onPointerDown={downA}
           onPointerUp={upA}
           onPointerCancel={upA}
@@ -206,7 +206,7 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
         {isMobile && (
           <button
             type="button"
-            className="shrink-0 select-none px-4 py-3 text-sm font-semibold text-white sm:text-base
+            className="shrink-0 select-none rounded-xl px-4 py-3 text-sm font-semibold text-white sm:text-base
                        bg-[#ED6F74] hover:bg-[#d85f64] active:bg-[#c8565b]
                        focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#ED6F74]"
             onPointerDown={downB}
