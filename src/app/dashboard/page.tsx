@@ -140,7 +140,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
   // 🔐 PIN gate
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const adminCookie = cookieStore.get('px_admin');
   if (!adminCookie || adminCookie.value !== '1') {
     redirect('/dashboard/login');
