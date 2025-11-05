@@ -1,8 +1,16 @@
+import type { Metadata } from 'next';
 import "./globals.css";
 import Image from "next/image";
 import Link from "next/link";
 
-export const metadata = { title: "PIXELock", description: "Private, timed image reveal" };
+export const metadata: Metadata = {
+  title: 'PIXELock',
+  description: 'Share images privately with a timed reveal.',
+  icons: {
+    icon: '/favicon.ico',
+    shortcut: '/favicon.ico',
+  },
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
