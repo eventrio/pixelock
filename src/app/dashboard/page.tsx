@@ -1,4 +1,3 @@
-// src/app/dashboard/page.tsx
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { supabaseService } from '@/lib/supabaseServer';
@@ -113,7 +112,6 @@ function buildGeoAgg(events: AnalyticsRow[]): {
       entry.sampleIps.push(ip);
     }
 
-    // Keep the first lat/lon we see for this country
     if (lat !== undefined && lon !== undefined && entry.lat === undefined) {
       entry.lat = lat;
       entry.lon = lon;
@@ -127,9 +125,8 @@ function buildGeoAgg(events: AnalyticsRow[]): {
   const markers: Marker[] = countries
     .filter((c) => typeof c.lat === 'number' && typeof c.lon === 'number')
     .map((c) => {
-      // crude lat/lon -> percentage position
-      const x = ((c.lon! + 180) / 360) * 100; // 0–100
-      const y = ((90 - c.lat!) / 180) * 100; // 0–100 (top is 0)
+      const x = ((c.lon! + 180) / 360) * 100;
+      const y = ((90 - c.lat!) / 180) * 100;
       return { ...c, x, y };
     });
 
@@ -139,7 +136,7 @@ function buildGeoAgg(events: AnalyticsRow[]): {
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  // 🔐 PIN gate
+  // 🔐 PIN gate – NOTE: cookies() is async in Next 15
   const cookieStore = await cookies();
   const adminCookie = cookieStore.get('px_admin');
   if (!adminCookie || adminCookie.value !== '1') {
@@ -193,7 +190,6 @@ export default async function DashboardPage() {
   const shareViewed7 = shareViewedPercent(stats7);
   const mobile7 = mobilePercent(stats7);
 
-  // 🌍 Geo aggregation (last 30 days)
   const { countries, markers } = buildGeoAgg(events30);
 
   return (
@@ -212,7 +208,7 @@ export default async function DashboardPage() {
         </span>
       </header>
 
-      {/* Top-level cards for last 7 days */}
+      {/* Last 7 days cards */}
       <section>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
           Last 7 days
@@ -253,7 +249,7 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* Uploads per day chart (7d) */}
+      {/* Uploads per day (7d) */}
       <section>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
           Uploads per day (last 7 days)
@@ -291,7 +287,7 @@ export default async function DashboardPage() {
         )}
       </section>
 
-      {/* Summary for 30d and All time */}
+      {/* 30d + all-time summary */}
       <section className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
@@ -332,7 +328,7 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* 🌍 GEO SECTION – last 30 days */}
+      {/* GEO section */}
       <section>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
           Usage geography (last 30 days)
@@ -345,7 +341,7 @@ export default async function DashboardPage() {
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-[2fr,1fr]">
-            {/* Simple “map” with hover markers */}
+            {/* Map */}
             <div className="relative aspect-[16/9] overflow-hidden rounded-2xl border bg-gradient-to-b from-sky-50 to-slate-100">
               {markers.length === 0 && (
                 <div className="flex h-full items-center justify-center text-sm text-gray-500">
@@ -370,8 +366,7 @@ export default async function DashboardPage() {
                     </div>
                     {m.sampleIps.length > 0 && (
                       <div className="mt-1 text-[10px] text-slate-300">
-                        IPs:{' '}
-                        {m.sampleIps.join(', ')}
+                        IPs: {m.sampleIps.join(', ')}
                       </div>
                     )}
                   </div>
@@ -390,9 +385,7 @@ export default async function DashboardPage() {
                     key={c.country}
                     className="flex items-baseline justify-between gap-3"
                   >
-                    <span className="truncate">
-                      {c.country}
-                    </span>
+                    <span className="truncate">{c.country}</span>
                     <span className="tabular-nums text-gray-700">
                       {c.count}
                     </span>

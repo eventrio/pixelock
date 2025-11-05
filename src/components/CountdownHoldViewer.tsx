@@ -220,7 +220,7 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
             onTouchEnd={upB as any}
             style={{ touchAction: 'none' }}
           >
-            2. Hold with other thumb
+            2. Press &amp; Hold Here
           </button>
         )}
 
