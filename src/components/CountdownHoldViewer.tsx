@@ -199,7 +199,7 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
           onTouchEnd={upA as any}
           style={{ touchAction: 'none' }}
         >
-          1. Press &amp; Hold to View
+          Press &amp; Hold to View
         </button>
 
         {/* Secondary hold (mobile only) — salmon accent & to the right */}
@@ -220,7 +220,7 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
             onTouchEnd={upB as any}
             style={{ touchAction: 'none' }}
           >
-            2. Now Press Here
+            Same Time Press Here
           </button>
         )}
 
