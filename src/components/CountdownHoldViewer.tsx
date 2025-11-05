@@ -206,7 +206,7 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
         {isMobile && (
           <button
             type="button"
-            className="shrink-0 select-none rounded-xl px-4 py-3 text-sm font-semibold text-white sm:text-base
+            className="shrink-0 select-none px-4 py-3 text-sm font-semibold text-white sm:text-base
                        bg-[#ED6F74] hover:bg-[#d85f64] active:bg-[#c8565b]
                        focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#ED6F74]"
             onPointerDown={downB}
@@ -220,7 +220,7 @@ export default function CountdownHoldViewer({ src, seconds = 15, onExpire }: Pro
             onTouchEnd={upB as any}
             style={{ touchAction: 'none' }}
           >
-            2. Press &amp; Hold Here
+            2. Now Press Here
           </button>
         )}
 
